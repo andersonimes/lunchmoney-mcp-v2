@@ -35,7 +35,7 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@lunch-money/lunch-money-js-v2": "^2.8.5",
+    "@lunch-money/lunch-money-js-v2": "^2.9.0",
     "@modelcontextprotocol/sdk": "^1.17.0",
     "zod": "^3.25.0"
   },
