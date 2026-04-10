@@ -1,6 +1,29 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { client } from "../client.js";
+import {
+  cache,
+  hydrateTransaction,
+  hydrateTransactions,
+  type HydrationContext,
+} from "../cache/index.js";
+
+const rawSchemaFragment = {
+  raw: z
+    .boolean()
+    .optional()
+    .describe(
+      "If true, return the unmodified v2 API response without hydration. Default false.",
+    ),
+};
+
+function newHydrationContext(): HydrationContext {
+  return { warnings: [] };
+}
+
+function jsonResponse(value: unknown) {
+  return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
+}
 
 const insertTransactionSchema = z.object({
   date: z.string().describe("Transaction date (YYYY-MM-DD)"),
@@ -47,7 +70,7 @@ const splitTransactionSchema = z.object({
 export function registerTransactionTools(server: McpServer) {
   server.tool(
     "get_all_transactions",
-    "Get all transactions with optional filters for date range, account, category, tags, status, and pagination",
+    "Get all transactions with optional filters for date range, account, category, tags, status, and pagination. By default, responses are hydrated with human-readable category, account, tag, and recurring-item names alongside the existing ID fields.",
     {
       start_date: z.string().optional().describe("Start date (YYYY-MM-DD)"),
       end_date: z.string().optional().describe("End date (YYYY-MM-DD)"),
@@ -71,20 +94,41 @@ export function registerTransactionTools(server: McpServer) {
       include_files: z.boolean().optional().describe("Include file attachments"),
       limit: z.number().optional().describe("Max number of transactions to return"),
       offset: z.number().optional().describe("Offset for pagination"),
+      ...rawSchemaFragment,
     },
-    async (params) => {
+    async ({ raw, ...params }) => {
       const result = await client.transactions.getAll(params);
-      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      if (raw === true) {
+        return jsonResponse(result);
+      }
+      const ctx = newHydrationContext();
+      const hydrated = await hydrateTransactions(result.transactions, ctx, cache);
+      return jsonResponse({
+        transactions: hydrated,
+        hasMore: result.hasMore,
+        ...(ctx.warnings.length > 0 && { hydration_warnings: ctx.warnings }),
+      });
     },
   );
 
   server.tool(
     "get_transaction",
-    "Get a single transaction by ID",
-    { id: z.number().describe("Transaction ID") },
-    async ({ id }) => {
+    "Get a single transaction by ID. By default, the response is hydrated with human-readable category, account, tag, and recurring-item names.",
+    {
+      id: z.number().describe("Transaction ID"),
+      ...rawSchemaFragment,
+    },
+    async ({ id, raw }) => {
       const transaction = await client.transactions.get(id);
-      return { content: [{ type: "text", text: JSON.stringify(transaction, null, 2) }] };
+      if (raw === true) {
+        return jsonResponse(transaction);
+      }
+      const ctx = newHydrationContext();
+      const hydrated = await hydrateTransaction(transaction, ctx, cache);
+      return jsonResponse({
+        ...hydrated,
+        ...(ctx.warnings.length > 0 && { hydration_warnings: ctx.warnings }),
+      });
     },
   );
 
@@ -154,16 +198,25 @@ export function registerTransactionTools(server: McpServer) {
 
   server.tool(
     "split_transaction",
-    "Split a transaction into multiple child transactions",
+    "Split a transaction into multiple child transactions. By default, the returned transaction is hydrated with human-readable name fields.",
     {
       id: z.number().describe("Transaction ID to split"),
       child_transactions: z
         .array(splitTransactionSchema)
         .describe("Array of split child transactions"),
+      ...rawSchemaFragment,
     },
-    async ({ id, child_transactions }) => {
+    async ({ id, child_transactions, raw }) => {
       const transaction = await client.transactions.split(id, { child_transactions } as any);
-      return { content: [{ type: "text", text: JSON.stringify(transaction, null, 2) }] };
+      if (raw === true) {
+        return jsonResponse(transaction);
+      }
+      const ctx = newHydrationContext();
+      const hydrated = await hydrateTransaction(transaction, ctx, cache);
+      return jsonResponse({
+        ...hydrated,
+        ...(ctx.warnings.length > 0 && { hydration_warnings: ctx.warnings }),
+      });
     },
   );
 
@@ -179,7 +232,7 @@ export function registerTransactionTools(server: McpServer) {
 
   server.tool(
     "group_transactions",
-    "Group multiple transactions together",
+    "Group multiple transactions together. By default, the returned transaction is hydrated with human-readable name fields.",
     {
       ids: z.array(z.number()).describe("Array of transaction IDs to group"),
       date: z.string().describe("Group date (YYYY-MM-DD)"),
@@ -188,10 +241,19 @@ export function registerTransactionTools(server: McpServer) {
       notes: z.string().nullable().optional().describe("Notes for the group"),
       status: z.enum(["reviewed", "unreviewed"]).optional().describe("Group status"),
       tag_ids: z.array(z.number()).optional().describe("Array of tag IDs"),
+      ...rawSchemaFragment,
     },
-    async (params) => {
+    async ({ raw, ...params }) => {
       const transaction = await client.transactions.group(params);
-      return { content: [{ type: "text", text: JSON.stringify(transaction, null, 2) }] };
+      if (raw === true) {
+        return jsonResponse(transaction);
+      }
+      const ctx = newHydrationContext();
+      const hydrated = await hydrateTransaction(transaction, ctx, cache);
+      return jsonResponse({
+        ...hydrated,
+        ...(ctx.warnings.length > 0 && { hydration_warnings: ctx.warnings }),
+      });
     },
   );
 
