@@ -385,5 +385,89 @@ describe("transaction tools", () => {
       expect(forwardedParams).not.toHaveProperty("raw");
       expect(forwardedParams).toMatchObject({ start_date: "2026-04-01" });
     });
+
+    it("group_transactions with raw:true returns the unmodified v2 response and skips the cache", async () => {
+      const grouped = {
+        id: 100,
+        category_id: 7,
+        manual_account_id: null,
+        plaid_account_id: null,
+        tag_ids: [3],
+        recurring_id: null,
+      };
+      mockClient.transactions.group.mockResolvedValue(grouped);
+      // Populate lookup maps so we can confirm they are NOT consulted.
+      mockClient.categories.getAll.mockResolvedValue([
+        { id: 7, name: "Travel" },
+      ]);
+      mockClient.tags.getAll.mockResolvedValue([{ id: 3, name: "work" }]);
+
+      const result = await tools.get("group_transactions")!.handler({
+        ids: [1, 2],
+        date: "2026-04-01",
+        payee: "Airline Bundle",
+        raw: true,
+      });
+      const body = JSON.parse(result.content[0].text);
+
+      expect(body).toEqual(grouped);
+      expect(body).not.toHaveProperty("category_name");
+      expect(body).not.toHaveProperty("tag_names");
+      expect(body).not.toHaveProperty("hydration_warnings");
+      expect(mockClient.categories.getAll).not.toHaveBeenCalled();
+      expect(mockClient.tags.getAll).not.toHaveBeenCalled();
+    });
+
+    it("get_transaction surfaces hydration_warnings when a scope refresh fails", async () => {
+      mockClient.transactions.get.mockResolvedValue({
+        id: 99,
+        category_id: null,
+        manual_account_id: null,
+        plaid_account_id: null,
+        tag_ids: [3, 8],
+        recurring_id: null,
+      });
+      mockClient.tags.getAll.mockRejectedValue(new Error("tags endpoint down"));
+
+      const result = await tools.get("get_transaction")!.handler({ id: 99 });
+      const body = JSON.parse(result.content[0].text);
+
+      // Transaction is still returned. Tag name fields are null-filled
+      // and hydration_warnings names the failed scope.
+      expect(body.id).toBe(99);
+      expect(body.tag_names).toEqual([null, null]);
+      expect(body.hydration_warnings).toHaveLength(1);
+      expect(body.hydration_warnings[0].scope).toBe("tags");
+      expect(body.hydration_warnings[0].reason).toContain("tags endpoint down");
+    });
+
+    it("group_transactions surfaces hydration_warnings when a scope refresh fails", async () => {
+      mockClient.transactions.group.mockResolvedValue({
+        id: 100,
+        category_id: 7,
+        manual_account_id: null,
+        plaid_account_id: null,
+        tag_ids: [],
+        recurring_id: null,
+      });
+      mockClient.categories.getAll.mockRejectedValue(
+        new Error("categories endpoint down"),
+      );
+
+      const result = await tools.get("group_transactions")!.handler({
+        ids: [1, 2],
+        date: "2026-04-01",
+        payee: "Airline Bundle",
+      });
+      const body = JSON.parse(result.content[0].text);
+
+      expect(body.id).toBe(100);
+      expect(body.category_name).toBeNull();
+      expect(body.hydration_warnings).toHaveLength(1);
+      expect(body.hydration_warnings[0].scope).toBe("categories");
+      expect(body.hydration_warnings[0].reason).toContain(
+        "categories endpoint down",
+      );
+    });
   });
 });

@@ -278,6 +278,53 @@ describe("hydrateTransactions", () => {
     expect(JSON.stringify(tx)).toBe(snapshot);
     expect((tx as unknown as { category_name?: unknown }).category_name).toBeUndefined();
   });
+
+  it("aggregates warnings when multiple scopes fail in parallel", async () => {
+    // Two scopes reject simultaneously; the other three resolve. We
+    // expect exactly two warnings in ctx.warnings (one per failed
+    // scope) and null-filled name fields for the two failed scopes,
+    // while the unrelated fields still resolve normally.
+    const fakeClient: CacheClient = {
+      categories: {
+        getAll: vi.fn().mockRejectedValue(new Error("categories down")),
+      },
+      tags: {
+        getAll: vi.fn().mockRejectedValue(new Error("tags down")),
+      },
+      manualAccounts: {
+        getAll: vi.fn().mockResolvedValue([
+          { id: 5, name: "Cash Wallet" } as unknown as ManualAccount,
+        ]),
+      },
+      plaidAccounts: { getAll: vi.fn().mockResolvedValue([]) },
+      recurringItems: { getAll: vi.fn().mockResolvedValue([]) },
+    };
+    const cache = new ScopedTtlCache({ client: fakeClient });
+
+    const tx = makeTx({
+      category_id: 7,
+      manual_account_id: 5,
+      tag_ids: [3],
+    });
+    const c = ctx();
+    const [hydrated] = await hydrateTransactions([tx], c, cache);
+
+    // Failed scopes null-fill on the tx.
+    expect(hydrated.category_name).toBeNull();
+    expect(hydrated.tag_names).toEqual([null]);
+    // Unrelated scope still resolves.
+    expect(hydrated.manual_account_name).toBe("Cash Wallet");
+
+    // Both failed scopes produced warnings, and only those two.
+    expect(c.warnings).toHaveLength(2);
+    const warningScopes = c.warnings.map((w) => w.scope).sort();
+    expect(warningScopes).toEqual(["categories", "tags"]);
+    const warningByScope = Object.fromEntries(
+      c.warnings.map((w) => [w.scope, w.reason]),
+    );
+    expect(warningByScope.categories).toContain("categories down");
+    expect(warningByScope.tags).toContain("tags down");
+  });
 });
 
 describe("hydrateTransaction (single-item wrapper)", () => {

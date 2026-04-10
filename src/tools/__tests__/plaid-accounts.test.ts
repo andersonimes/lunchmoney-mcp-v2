@@ -47,13 +47,30 @@ describe("plaid account tools", () => {
   });
 
   describe("cache invalidation", () => {
-    it("trigger_plaid_fetch invalidates the plaidAccounts scope", async () => {
+    it("trigger_plaid_fetch invalidates the plaidAccounts scope on success", async () => {
       mockClient.plaidAccounts.triggerFetch.mockResolvedValue(undefined);
       const spy = vi.spyOn(cache, "invalidate");
 
       await tools.get("trigger_plaid_fetch")!.handler({});
 
       expect(spy).toHaveBeenCalledWith("plaidAccounts");
+      spy.mockRestore();
+    });
+
+    it("trigger_plaid_fetch does not invalidate the cache when the upstream call fails", async () => {
+      // A failed plaid fetch must not wipe the cache. Matches the
+      // behavior of every other write tool in the fork: invalidation
+      // only happens after a successful client call.
+      mockClient.plaidAccounts.triggerFetch.mockRejectedValue(
+        new Error("plaid endpoint down"),
+      );
+      const spy = vi.spyOn(cache, "invalidate");
+
+      await expect(
+        tools.get("trigger_plaid_fetch")!.handler({}),
+      ).rejects.toThrow("plaid endpoint down");
+
+      expect(spy).not.toHaveBeenCalled();
       spy.mockRestore();
     });
   });
