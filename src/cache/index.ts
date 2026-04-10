@@ -19,6 +19,12 @@ export {
   type ScopedTtlCacheOptions,
 } from "./store.js";
 
+export {
+  hydrateTransaction,
+  hydrateTransactions,
+  type HydratedTransaction,
+} from "./hydrate.js";
+
 import { ScopedTtlCache } from "./store.js";
 
 export const cache = new ScopedTtlCache();
