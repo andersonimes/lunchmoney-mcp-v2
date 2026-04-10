@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { client } from "../client.js";
+import { cache } from "../cache/index.js";
 
 export function registerCategoryTools(server: McpServer) {
   server.tool(
@@ -42,6 +43,7 @@ export function registerCategoryTools(server: McpServer) {
     },
     async (params) => {
       const category = await client.categories.create(params);
+      cache.invalidate("categories");
       return { content: [{ type: "text", text: JSON.stringify(category, null, 2) }] };
     },
   );
@@ -62,6 +64,7 @@ export function registerCategoryTools(server: McpServer) {
     },
     async ({ id, ...data }) => {
       const category = await client.categories.update(id, data);
+      cache.invalidate("categories");
       return { content: [{ type: "text", text: JSON.stringify(category, null, 2) }] };
     },
   );
@@ -75,6 +78,7 @@ export function registerCategoryTools(server: McpServer) {
     },
     async ({ id, force }) => {
       await client.categories.delete(id, { force });
+      cache.invalidate("categories");
       return { content: [{ type: "text", text: `Category ${id} deleted successfully.` }] };
     },
   );

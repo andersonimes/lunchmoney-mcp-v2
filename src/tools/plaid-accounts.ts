@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { client } from "../client.js";
+import { cache } from "../cache/index.js";
 
 export function registerPlaidAccountTools(server: McpServer) {
   server.tool(
@@ -33,6 +34,10 @@ export function registerPlaidAccountTools(server: McpServer) {
     },
     async (params) => {
       await client.plaidAccounts.triggerFetch(params);
+      // A successful Plaid fetch may update account metadata (including
+      // display names), so conservatively drop the plaid-accounts cache
+      // scope to force a refresh on the next hydration lookup.
+      cache.invalidate("plaidAccounts");
       return { content: [{ type: "text", text: "Plaid fetch triggered successfully." }] };
     },
   );

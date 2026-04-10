@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { mockClient } from "./mock-client.js";
 import { createTestServer } from "./test-helpers.js";
 import { registerCategoryTools } from "../categories.js";
+import { cache } from "../../cache/index.js";
 
 describe("category tools", () => {
   const { server, tools } = createTestServer();
@@ -69,5 +70,37 @@ describe("category tools", () => {
     const result = await tools.get("delete_category")!.handler({ id: 3, force: true });
     expect(result.content[0].text).toContain("deleted successfully");
     expect(mockClient.categories.delete).toHaveBeenCalledWith(3, { force: true });
+  });
+
+  describe("cache invalidation", () => {
+    it("create_category invalidates the categories scope", async () => {
+      mockClient.categories.create.mockResolvedValue({ id: 10, name: "Groceries" });
+      const spy = vi.spyOn(cache, "invalidate");
+
+      await tools.get("create_category")!.handler({ name: "Groceries" });
+
+      expect(spy).toHaveBeenCalledWith("categories");
+      spy.mockRestore();
+    });
+
+    it("update_category invalidates the categories scope", async () => {
+      mockClient.categories.update.mockResolvedValue({ id: 5, name: "Updated" });
+      const spy = vi.spyOn(cache, "invalidate");
+
+      await tools.get("update_category")!.handler({ id: 5, name: "Updated" });
+
+      expect(spy).toHaveBeenCalledWith("categories");
+      spy.mockRestore();
+    });
+
+    it("delete_category invalidates the categories scope", async () => {
+      mockClient.categories.delete.mockResolvedValue(undefined);
+      const spy = vi.spyOn(cache, "invalidate");
+
+      await tools.get("delete_category")!.handler({ id: 3 });
+
+      expect(spy).toHaveBeenCalledWith("categories");
+      spy.mockRestore();
+    });
   });
 });

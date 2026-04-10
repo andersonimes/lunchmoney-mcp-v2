@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { mockClient } from "./mock-client.js";
 import { createTestServer } from "./test-helpers.js";
 import { registerPlaidAccountTools } from "../plaid-accounts.js";
+import { cache } from "../../cache/index.js";
 
 describe("plaid account tools", () => {
   const { server, tools } = createTestServer();
@@ -43,5 +44,17 @@ describe("plaid account tools", () => {
     expect(mockClient.plaidAccounts.triggerFetch).toHaveBeenCalledWith(
       expect.objectContaining({ start_date: "2024-01-01" }),
     );
+  });
+
+  describe("cache invalidation", () => {
+    it("trigger_plaid_fetch invalidates the plaidAccounts scope", async () => {
+      mockClient.plaidAccounts.triggerFetch.mockResolvedValue(undefined);
+      const spy = vi.spyOn(cache, "invalidate");
+
+      await tools.get("trigger_plaid_fetch")!.handler({});
+
+      expect(spy).toHaveBeenCalledWith("plaidAccounts");
+      spy.mockRestore();
+    });
   });
 });

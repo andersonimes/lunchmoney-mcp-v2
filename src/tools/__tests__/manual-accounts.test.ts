@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { mockClient } from "./mock-client.js";
 import { createTestServer } from "./test-helpers.js";
 import { registerManualAccountTools } from "../manual-accounts.js";
+import { cache } from "../../cache/index.js";
 
 describe("manual account tools", () => {
   const { server, tools } = createTestServer();
@@ -66,5 +67,41 @@ describe("manual account tools", () => {
     const result = await tools.get("delete_manual_account")!.handler({ id: 5 });
     expect(result.content[0].text).toContain("deleted successfully");
     expect(mockClient.manualAccounts.delete).toHaveBeenCalledWith(5);
+  });
+
+  describe("cache invalidation", () => {
+    it("create_manual_account invalidates the manualAccounts scope", async () => {
+      mockClient.manualAccounts.create.mockResolvedValue({ id: 10, name: "New Account" });
+      const spy = vi.spyOn(cache, "invalidate");
+
+      await tools.get("create_manual_account")!.handler({
+        name: "New Account",
+        type: "checking",
+        balance: 1000,
+      });
+
+      expect(spy).toHaveBeenCalledWith("manualAccounts");
+      spy.mockRestore();
+    });
+
+    it("update_manual_account invalidates the manualAccounts scope", async () => {
+      mockClient.manualAccounts.update.mockResolvedValue({ id: 5, name: "Renamed" });
+      const spy = vi.spyOn(cache, "invalidate");
+
+      await tools.get("update_manual_account")!.handler({ id: 5, name: "Renamed" });
+
+      expect(spy).toHaveBeenCalledWith("manualAccounts");
+      spy.mockRestore();
+    });
+
+    it("delete_manual_account invalidates the manualAccounts scope", async () => {
+      mockClient.manualAccounts.delete.mockResolvedValue(undefined);
+      const spy = vi.spyOn(cache, "invalidate");
+
+      await tools.get("delete_manual_account")!.handler({ id: 5 });
+
+      expect(spy).toHaveBeenCalledWith("manualAccounts");
+      spy.mockRestore();
+    });
   });
 });

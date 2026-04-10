@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { client } from "../client.js";
+import { cache } from "../cache/index.js";
 
 export function registerManualAccountTools(server: McpServer) {
   server.tool(
@@ -42,6 +43,7 @@ export function registerManualAccountTools(server: McpServer) {
     },
     async (params) => {
       const account = await client.manualAccounts.create(params as any);
+      cache.invalidate("manualAccounts");
       return { content: [{ type: "text", text: JSON.stringify(account, null, 2) }] };
     },
   );
@@ -66,6 +68,7 @@ export function registerManualAccountTools(server: McpServer) {
     },
     async ({ id, ...data }) => {
       const account = await client.manualAccounts.update(id, data as any);
+      cache.invalidate("manualAccounts");
       return { content: [{ type: "text", text: JSON.stringify(account, null, 2) }] };
     },
   );
@@ -76,6 +79,7 @@ export function registerManualAccountTools(server: McpServer) {
     { id: z.number().describe("Manual account ID to delete") },
     async ({ id }) => {
       await client.manualAccounts.delete(id);
+      cache.invalidate("manualAccounts");
       return { content: [{ type: "text", text: `Manual account ${id} deleted successfully.` }] };
     },
   );

@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { mockClient } from "./mock-client.js";
 import { createTestServer } from "./test-helpers.js";
 import { registerTagTools } from "../tags.js";
+import { cache } from "../../cache/index.js";
 
 describe("tag tools", () => {
   const { server, tools } = createTestServer();
@@ -62,5 +63,37 @@ describe("tag tools", () => {
     const result = await tools.get("delete_tag")!.handler({ id: 2, force: true });
     expect(result.content[0].text).toContain("deleted successfully");
     expect(mockClient.tags.delete).toHaveBeenCalledWith(2, { force: true });
+  });
+
+  describe("cache invalidation", () => {
+    it("create_tag invalidates the tags scope", async () => {
+      mockClient.tags.create.mockResolvedValue({ id: 10, name: "New Tag" });
+      const spy = vi.spyOn(cache, "invalidate");
+
+      await tools.get("create_tag")!.handler({ name: "New Tag" });
+
+      expect(spy).toHaveBeenCalledWith("tags");
+      spy.mockRestore();
+    });
+
+    it("update_tag invalidates the tags scope", async () => {
+      mockClient.tags.update.mockResolvedValue({ id: 2, name: "Updated" });
+      const spy = vi.spyOn(cache, "invalidate");
+
+      await tools.get("update_tag")!.handler({ id: 2, name: "Updated" });
+
+      expect(spy).toHaveBeenCalledWith("tags");
+      spy.mockRestore();
+    });
+
+    it("delete_tag invalidates the tags scope", async () => {
+      mockClient.tags.delete.mockResolvedValue(undefined);
+      const spy = vi.spyOn(cache, "invalidate");
+
+      await tools.get("delete_tag")!.handler({ id: 2 });
+
+      expect(spy).toHaveBeenCalledWith("tags");
+      spy.mockRestore();
+    });
   });
 });

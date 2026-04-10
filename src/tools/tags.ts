@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { client } from "../client.js";
+import { cache } from "../cache/index.js";
 
 export function registerTagTools(server: McpServer) {
   server.tool("get_all_tags", "Get all tags", {}, async () => {
@@ -29,6 +30,7 @@ export function registerTagTools(server: McpServer) {
     },
     async (params) => {
       const tag = await client.tags.create(params);
+      cache.invalidate("tags");
       return { content: [{ type: "text", text: JSON.stringify(tag, null, 2) }] };
     },
   );
@@ -46,6 +48,7 @@ export function registerTagTools(server: McpServer) {
     },
     async ({ id, ...data }) => {
       const tag = await client.tags.update(id, data);
+      cache.invalidate("tags");
       return { content: [{ type: "text", text: JSON.stringify(tag, null, 2) }] };
     },
   );
@@ -59,6 +62,7 @@ export function registerTagTools(server: McpServer) {
     },
     async ({ id, force }) => {
       await client.tags.delete(id, { force });
+      cache.invalidate("tags");
       return { content: [{ type: "text", text: `Tag ${id} deleted successfully.` }] };
     },
   );
