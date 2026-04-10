@@ -63,6 +63,13 @@ interface ScopeEntry {
   refreshedAt: number;
   inFlight?: Promise<void>;
   lastError?: string;
+  /**
+   * Monotonic counter bumped by every `invalidate(scope)` call. A refresh
+   * in progress captures the generation at start and discards its result
+   * if the value has changed by the time the fetch completes, so that a
+   * pre-invalidation refresh cannot overwrite post-invalidation state.
+   */
+  generation: number;
 }
 
 /**
@@ -131,7 +138,16 @@ export class ScopedTtlCache {
     const entry = this.scopes[scope];
 
     if (entry.inFlight) {
-      await entry.inFlight;
+      // A concurrent caller already kicked off a refresh. Await the same
+      // promise so we coalesce to a single underlying fetch, but catch
+      // any rejection locally so that this caller honors the "never
+      // throws" contract. Each concurrent caller records its own warning
+      // into its own HydrationContext.
+      try {
+        await entry.inFlight;
+      } catch (err) {
+        ctx.warnings.push({ scope, reason: shortReason(err) });
+      }
       return;
     }
 
@@ -161,15 +177,22 @@ export class ScopedTtlCache {
    * Drop all cached entries for a scope and reset its refresh timestamp.
    * The next `ensureFresh` call on this scope will perform a full fetch.
    *
-   * `inFlight` and `lastError` are intentionally preserved so a
-   * concurrent in-progress refresh is not interrupted and the most
-   * recent error remains visible until the next successful refresh
-   * overwrites it.
+   * Bumps `generation` to cancel any refresh currently in flight: a
+   * refresh that started before this invalidate() will discard its
+   * result on completion rather than stamping pre-invalidation data
+   * back onto the scope. This preserves write-through semantics even
+   * when an invalidate races a concurrent read.
+   *
+   * `inFlight` and `lastError` are intentionally preserved: the
+   * concurrent refresh is still allowed to complete (and the coalesced
+   * caller awaiting it will return normally), we just discard the data
+   * it would have written.
    */
   invalidate(scope: CacheScope): void {
     const entry = this.scopes[scope];
     entry.refreshedAt = 0;
     entry.data.clear();
+    entry.generation += 1;
   }
 
   /** Invalidate every scope. Useful for test isolation and full resets. */
@@ -181,10 +204,15 @@ export class ScopedTtlCache {
 
   private async refresh(scope: CacheScope): Promise<void> {
     const entry = this.scopes[scope];
+    // Capture the generation at refresh start. If `invalidate(scope)`
+    // runs while we are awaiting the fetch, entry.generation will
+    // differ when we come back and we discard the result.
+    const startGeneration = entry.generation;
 
     switch (scope) {
       case "categories": {
         const list = await this.client.categories.getAll();
+        if (entry.generation !== startGeneration) return;
         const next = new Map<number, string>();
         for (const item of list) {
           next.set(item.id, item.name);
@@ -194,6 +222,7 @@ export class ScopedTtlCache {
       }
       case "tags": {
         const list = await this.client.tags.getAll();
+        if (entry.generation !== startGeneration) return;
         const next = new Map<number, string>();
         for (const item of list) {
           next.set(item.id, item.name);
@@ -203,6 +232,7 @@ export class ScopedTtlCache {
       }
       case "manualAccounts": {
         const list = await this.client.manualAccounts.getAll();
+        if (entry.generation !== startGeneration) return;
         const next = new Map<number, string>();
         for (const item of list) {
           next.set(item.id, item.name);
@@ -212,6 +242,7 @@ export class ScopedTtlCache {
       }
       case "plaidAccounts": {
         const list = await this.client.plaidAccounts.getAll();
+        if (entry.generation !== startGeneration) return;
         const next = new Map<number, string>();
         for (const item of list) {
           next.set(item.id, item.name);
@@ -221,6 +252,7 @@ export class ScopedTtlCache {
       }
       case "recurringItems": {
         const list = await this.client.recurringItems.getAll();
+        if (entry.generation !== startGeneration) return;
         const next = new Map<number, string>();
         for (const item of list) {
           const payee = resolveRecurringPayee(item);
@@ -239,7 +271,7 @@ export class ScopedTtlCache {
 }
 
 function emptyScope(): ScopeEntry {
-  return { data: new Map(), refreshedAt: 0 };
+  return { data: new Map(), refreshedAt: 0, generation: 0 };
 }
 
 /**

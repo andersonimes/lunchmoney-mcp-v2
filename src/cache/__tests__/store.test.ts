@@ -359,4 +359,76 @@ describe("ScopedTtlCache", () => {
     expect(cache.lookup("categories", 1)).toBeUndefined();
     expect(cache.lookup("tags", 2)).toBeUndefined();
   });
+
+  it("concurrent callers on a failed refresh each record their own warning without an unhandled rejection", async () => {
+    // Controlled failing refresh: we capture the reject function so we
+    // can time the rejection after multiple callers are awaiting the
+    // same in-flight promise.
+    let rejectFetch: ((err: Error) => void) | undefined;
+    const pending = new Promise<Category[]>((_, reject) => {
+      rejectFetch = reject;
+    });
+
+    const fake = makeFakeClient();
+    fake.categoriesGetAll.mockReturnValueOnce(pending);
+
+    const cache = new ScopedTtlCache({ client: fake.client });
+    const ctxA = freshContext();
+    const ctxB = freshContext();
+    const ctxC = freshContext();
+
+    const first = cache.ensureFresh("categories", ctxA);
+    const second = cache.ensureFresh("categories", ctxB);
+    const third = cache.ensureFresh("categories", ctxC);
+
+    rejectFetch?.(new Error("categories endpoint down"));
+
+    // All three calls must resolve (not reject), and each caller's own
+    // context must carry a single matching warning.
+    await expect(Promise.all([first, second, third])).resolves.toBeDefined();
+    expect(fake.categoriesGetAll).toHaveBeenCalledTimes(1);
+    for (const ctx of [ctxA, ctxB, ctxC]) {
+      expect(ctx.warnings).toHaveLength(1);
+      expect(ctx.warnings[0]?.scope).toBe("categories");
+      expect(ctx.warnings[0]?.reason).toContain("categories endpoint down");
+    }
+  });
+
+  it("invalidate during an in-flight refresh discards the refresh result", async () => {
+    // Controlled slow fetch so we can invalidate mid-refresh.
+    let resolveFetch: ((value: Category[]) => void) | undefined;
+    const pending = new Promise<Category[]>((resolve) => {
+      resolveFetch = resolve;
+    });
+
+    const fake = makeFakeClient();
+    fake.categoriesGetAll.mockReturnValueOnce(pending);
+
+    const cache = new ScopedTtlCache({ client: fake.client });
+    const ctx = freshContext();
+
+    // Kick off a refresh but do not await yet.
+    const refreshInFlight = cache.ensureFresh("categories", ctx);
+
+    // Simulate a write arriving during the in-flight refresh: rename
+    // happens upstream, and our tool handler calls invalidate.
+    cache.invalidate("categories");
+
+    // Now let the (stale, pre-write) refresh complete.
+    resolveFetch?.([makeCategory(7, "Pre-write name")]);
+    await refreshInFlight;
+
+    // The stale refresh must NOT have populated the scope because
+    // invalidate bumped the generation.
+    expect(cache.lookup("categories", 7)).toBeUndefined();
+
+    // A subsequent refresh must actually run and pick up the
+    // post-write data.
+    fake.categoriesGetAll.mockResolvedValueOnce([
+      makeCategory(7, "Post-write name"),
+    ]);
+    await cache.ensureFresh("categories", freshContext());
+    expect(fake.categoriesGetAll).toHaveBeenCalledTimes(2);
+    expect(cache.lookup("categories", 7)).toBe("Post-write name");
+  });
 });
