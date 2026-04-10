@@ -62,7 +62,6 @@ interface ScopeEntry {
   data: Map<number, string>;
   refreshedAt: number;
   inFlight?: Promise<void>;
-  lastError?: string;
   /**
    * Monotonic counter bumped by every `invalidate(scope)` call. A refresh
    * in progress captures the generation at start and discards its result
@@ -160,9 +159,7 @@ export class ScopedTtlCache {
     try {
       await pending;
     } catch (err) {
-      const reason = shortReason(err);
-      ctx.warnings.push({ scope, reason });
-      entry.lastError = reason;
+      ctx.warnings.push({ scope, reason: shortReason(err) });
     } finally {
       entry.inFlight = undefined;
     }
@@ -213,65 +210,75 @@ export class ScopedTtlCache {
       case "categories": {
         const list = await this.client.categories.getAll();
         if (entry.generation !== startGeneration) return;
-        const next = new Map<number, string>();
-        for (const item of list) {
-          next.set(item.id, item.name);
-        }
-        entry.data = next;
+        entry.data = toIdNameMap(list);
         break;
       }
       case "tags": {
         const list = await this.client.tags.getAll();
         if (entry.generation !== startGeneration) return;
-        const next = new Map<number, string>();
-        for (const item of list) {
-          next.set(item.id, item.name);
-        }
-        entry.data = next;
+        entry.data = toIdNameMap(list);
         break;
       }
       case "manualAccounts": {
         const list = await this.client.manualAccounts.getAll();
         if (entry.generation !== startGeneration) return;
-        const next = new Map<number, string>();
-        for (const item of list) {
-          next.set(item.id, item.name);
-        }
-        entry.data = next;
+        entry.data = toIdNameMap(list);
         break;
       }
       case "plaidAccounts": {
         const list = await this.client.plaidAccounts.getAll();
         if (entry.generation !== startGeneration) return;
-        const next = new Map<number, string>();
-        for (const item of list) {
-          next.set(item.id, item.name);
-        }
-        entry.data = next;
+        entry.data = toIdNameMap(list);
         break;
       }
       case "recurringItems": {
         const list = await this.client.recurringItems.getAll();
         if (entry.generation !== startGeneration) return;
-        const next = new Map<number, string>();
-        for (const item of list) {
-          const payee = resolveRecurringPayee(item);
-          if (payee !== null) {
-            next.set(item.id, payee);
-          }
-        }
-        entry.data = next;
+        entry.data = toRecurringPayeeMap(list);
         break;
       }
     }
 
     entry.refreshedAt = Date.now();
-    entry.lastError = undefined;
   }
 }
 
 function emptyScope(): ScopeEntry {
   return { data: new Map(), refreshedAt: 0, generation: 0 };
+}
+
+/**
+ * Build a `{id → name}` map from a list of resource objects whose shape
+ * is `{ id: number; name: string }`. Used by the categories, tags,
+ * manualAccounts, and plaidAccounts cache scopes — all four resource
+ * types have the same relevant surface.
+ */
+function toIdNameMap<T extends { id: number; name: string }>(
+  items: readonly T[],
+): Map<number, string> {
+  const next = new Map<number, string>();
+  for (const item of items) {
+    next.set(item.id, item.name);
+  }
+  return next;
+}
+
+/**
+ * Build a `{id → payee}` map for the recurringItems scope, applying the
+ * payee fallback chain (overrides.payee → transaction_criteria.payee →
+ * description) and omitting items for which nothing resolves.
+ */
+function toRecurringPayeeMap(
+  items: readonly RecurringItem[],
+): Map<number, string> {
+  const next = new Map<number, string>();
+  for (const item of items) {
+    const payee = resolveRecurringPayee(item);
+    if (payee !== null) {
+      next.set(item.id, payee);
+    }
+  }
+  return next;
 }
 
 /**

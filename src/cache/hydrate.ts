@@ -1,6 +1,6 @@
 import type { Transaction } from "@lunch-money/lunch-money-js-v2";
 
-import { cache as defaultCache } from "./index.js";
+import { cache as defaultCache } from "./singleton.js";
 import type {
   CacheScope,
   HydrationContext,
@@ -65,38 +65,25 @@ export async function hydrateTransaction(
   return hydrated as HydratedTransaction;
 }
 
+// The five cache scopes the hydration layer can consume. Kept in sync
+// with CacheScope in ./store.ts.
+const MAX_SCOPE_COUNT = 5;
+
 function collectNeededScopes(txs: readonly Transaction[]): CacheScope[] {
-  let needCategories = false;
-  let needManualAccounts = false;
-  let needPlaidAccounts = false;
-  let needTags = false;
-  let needRecurringItems = false;
+  const scopes = new Set<CacheScope>();
 
   for (const tx of txs) {
-    if (tx.category_id != null) needCategories = true;
-    if (tx.manual_account_id != null) needManualAccounts = true;
-    if (tx.plaid_account_id != null) needPlaidAccounts = true;
-    if (tx.tag_ids && tx.tag_ids.length > 0) needTags = true;
-    if (tx.recurring_id != null) needRecurringItems = true;
+    if (tx.category_id != null) scopes.add("categories");
+    if (tx.tag_ids && tx.tag_ids.length > 0) scopes.add("tags");
+    if (tx.manual_account_id != null) scopes.add("manualAccounts");
+    if (tx.plaid_account_id != null) scopes.add("plaidAccounts");
+    if (tx.recurring_id != null) scopes.add("recurringItems");
 
-    if (
-      needCategories &&
-      needManualAccounts &&
-      needPlaidAccounts &&
-      needTags &&
-      needRecurringItems
-    ) {
-      break;
-    }
+    // Early exit: nothing more to discover once all scopes are needed.
+    if (scopes.size === MAX_SCOPE_COUNT) break;
   }
 
-  const scopes: CacheScope[] = [];
-  if (needCategories) scopes.push("categories");
-  if (needTags) scopes.push("tags");
-  if (needManualAccounts) scopes.push("manualAccounts");
-  if (needPlaidAccounts) scopes.push("plaidAccounts");
-  if (needRecurringItems) scopes.push("recurringItems");
-  return scopes;
+  return Array.from(scopes);
 }
 
 function hydrateOne(
