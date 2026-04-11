@@ -30,7 +30,12 @@ export type CacheScope =
   | "plaidAccounts"
   | "recurringItems";
 
-const ALL_SCOPES: readonly CacheScope[] = [
+/**
+ * Authoritative ordered list of every cache scope. Exported so that the
+ * hydration layer can size its short-circuits against the real scope
+ * count instead of a duplicate hardcoded constant.
+ */
+export const ALL_SCOPES: readonly CacheScope[] = [
   "categories",
   "tags",
   "manualAccounts",
@@ -199,46 +204,60 @@ export class ScopedTtlCache {
     }
   }
 
-  private async refresh(scope: CacheScope): Promise<void> {
-    const entry = this.scopes[scope];
-    // Capture the generation at refresh start. If `invalidate(scope)`
-    // runs while we are awaiting the fetch, entry.generation will
-    // differ when we come back and we discard the result.
-    const startGeneration = entry.generation;
-
+  private refresh(scope: CacheScope): Promise<void> {
     switch (scope) {
-      case "categories": {
-        const list = await this.client.categories.getAll();
-        if (entry.generation !== startGeneration) return;
-        entry.data = toIdNameMap(list);
-        break;
-      }
-      case "tags": {
-        const list = await this.client.tags.getAll();
-        if (entry.generation !== startGeneration) return;
-        entry.data = toIdNameMap(list);
-        break;
-      }
-      case "manualAccounts": {
-        const list = await this.client.manualAccounts.getAll();
-        if (entry.generation !== startGeneration) return;
-        entry.data = toIdNameMap(list);
-        break;
-      }
-      case "plaidAccounts": {
-        const list = await this.client.plaidAccounts.getAll();
-        if (entry.generation !== startGeneration) return;
-        entry.data = toIdNameMap(list);
-        break;
-      }
-      case "recurringItems": {
-        const list = await this.client.recurringItems.getAll();
-        if (entry.generation !== startGeneration) return;
-        entry.data = toRecurringPayeeMap(list);
-        break;
-      }
+      case "categories":
+        return this.refreshScope(
+          scope,
+          () => this.client.categories.getAll(),
+          toIdNameMap,
+        );
+      case "tags":
+        return this.refreshScope(
+          scope,
+          () => this.client.tags.getAll(),
+          toIdNameMap,
+        );
+      case "manualAccounts":
+        return this.refreshScope(
+          scope,
+          () => this.client.manualAccounts.getAll(),
+          toIdNameMap,
+        );
+      case "plaidAccounts":
+        return this.refreshScope(
+          scope,
+          () => this.client.plaidAccounts.getAll(),
+          toIdNameMap,
+        );
+      case "recurringItems":
+        return this.refreshScope(
+          scope,
+          () => this.client.recurringItems.getAll(),
+          toRecurringPayeeMap,
+        );
     }
+  }
 
+  /**
+   * Shared refresh body for every scope. Captures the generation counter
+   * at the start of the fetch, discards the result (without stamping
+   * `refreshedAt`) if `invalidate(scope)` ran while we were awaiting the
+   * client, and otherwise installs the new data via the scope-specific
+   * mapper. Four of the five scopes share `toIdNameMap`; `recurringItems`
+   * uses `toRecurringPayeeMap` because its payee lives in a different
+   * field and needs a fallback chain.
+   */
+  private async refreshScope<T>(
+    scope: CacheScope,
+    fetch: () => Promise<readonly T[]>,
+    toMap: (items: readonly T[]) => Map<number, string>,
+  ): Promise<void> {
+    const entry = this.scopes[scope];
+    const startGeneration = entry.generation;
+    const list = await fetch();
+    if (entry.generation !== startGeneration) return;
+    entry.data = toMap(list);
     entry.refreshedAt = Date.now();
   }
 }

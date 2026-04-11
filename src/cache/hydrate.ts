@@ -1,10 +1,11 @@
 import type { Transaction } from "@lunch-money/lunch-money-js-v2";
 
 import { cache as defaultCache } from "./singleton.js";
-import type {
-  CacheScope,
-  HydrationContext,
-  ScopedTtlCache,
+import {
+  ALL_SCOPES,
+  type CacheScope,
+  type HydrationContext,
+  type ScopedTtlCache,
 } from "./store.js";
 
 /**
@@ -65,10 +66,6 @@ export async function hydrateTransaction(
   return hydrated as HydratedTransaction;
 }
 
-// The five cache scopes the hydration layer can consume. Kept in sync
-// with CacheScope in ./store.ts.
-const MAX_SCOPE_COUNT = 5;
-
 function collectNeededScopes(txs: readonly Transaction[]): CacheScope[] {
   const scopes = new Set<CacheScope>();
 
@@ -79,8 +76,10 @@ function collectNeededScopes(txs: readonly Transaction[]): CacheScope[] {
     if (tx.plaid_account_id != null) scopes.add("plaidAccounts");
     if (tx.recurring_id != null) scopes.add("recurringItems");
 
-    // Early exit: nothing more to discover once all scopes are needed.
-    if (scopes.size === MAX_SCOPE_COUNT) break;
+    // Early exit: nothing more to discover once every scope is needed.
+    // Sized against the authoritative scope list so adding a new scope
+    // only requires touching ALL_SCOPES in ./store.ts.
+    if (scopes.size === ALL_SCOPES.length) break;
   }
 
   return Array.from(scopes);
