@@ -23,17 +23,19 @@ export const accountTypeEnumValues = [
   "vehicle",
 ] as const;
 
+// Shared describe() text for the `type` field on both create and update
+// variants. Extracted to avoid drift if accountTypeEnumValues ever changes.
+const accountTypeDescription = `Account type. One of: ${accountTypeEnumValues
+  .map((v) => `'${v}'`)
+  .join(", ")}.`;
+
 // Shared shape for the create_manual_account tool.
 // Note: institution_name and display_name are NOT nullable here (v2's
 // create-manual-account endpoint rejects null for both). The update
 // variant below allows null because v2's update endpoint does.
 export const createManualAccountShape = {
   name: z.string().describe("Account name"),
-  type: z
-    .enum(accountTypeEnumValues)
-    .describe(
-      "Account type. One of: 'cash', 'credit', 'cryptocurrency', 'employee compensation', 'investment', 'loan', 'other liability', 'other asset', 'real estate', 'vehicle'.",
-    ),
+  type: z.enum(accountTypeEnumValues).describe(accountTypeDescription),
   balance: z.union([z.number(), z.string()]).describe("Current balance"),
   institution_name: z.string().optional().describe("Financial institution name"),
   display_name: z.string().optional().describe("Display name"),
@@ -47,17 +49,14 @@ export const createManualAccountShape = {
 };
 export const createManualAccountSchema = z.object(createManualAccountShape);
 
-// Shared shape for the update_manual_account tool (minus the `id`
-// field, which is destructured out of the handler's input).
+// Shared shape for the update_manual_account tool, including `id`. The
+// shape is passed directly to server.tool(); the `id` field is only
+// stripped when calling toUpdateManualAccountInput, where it is
+// destructured out of the handler's input.
 export const updateManualAccountShape = {
   id: z.number().describe("Manual account ID to update"),
   name: z.string().optional().describe("Account name"),
-  type: z
-    .enum(accountTypeEnumValues)
-    .optional()
-    .describe(
-      "Account type. One of: 'cash', 'credit', 'cryptocurrency', 'employee compensation', 'investment', 'loan', 'other liability', 'other asset', 'real estate', 'vehicle'.",
-    ),
+  type: z.enum(accountTypeEnumValues).optional().describe(accountTypeDescription),
   balance: z.union([z.number(), z.string()]).optional().describe("Current balance"),
   institution_name: z.string().nullable().optional().describe("Financial institution name"),
   display_name: z.string().nullable().optional().describe("Display name"),
