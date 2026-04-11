@@ -39,8 +39,11 @@ const splitTransactionSchema = z.object({
   amount: z.union([z.number(), z.string()]).describe("Split amount"),
   date: z.string().optional().describe("Split date (YYYY-MM-DD)"),
   payee: z.string().optional().describe("Payee name"),
-  category_id: z.number().nullable().optional().describe("Category ID"),
-  notes: z.string().nullable().optional().describe("Notes"),
+  // v2 splitTransactionObject types these as optional but NOT nullable; omitting
+  // the field means "inherit from parent", which is what any caller who passed
+  // null was actually asking for.
+  category_id: z.number().optional().describe("Category ID"),
+  notes: z.string().optional().describe("Notes"),
   tag_ids: z.array(z.number()).optional().describe("Array of tag IDs"),
 });
 
@@ -162,7 +165,7 @@ export function registerTransactionTools(server: McpServer) {
         .describe("Array of split child transactions"),
     },
     async ({ id, child_transactions }) => {
-      const transaction = await client.transactions.split(id, { child_transactions } as any);
+      const transaction = await client.transactions.split(id, { child_transactions });
       return { content: [{ type: "text", text: JSON.stringify(transaction, null, 2) }] };
     },
   );
