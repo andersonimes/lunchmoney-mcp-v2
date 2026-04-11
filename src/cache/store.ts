@@ -185,10 +185,10 @@ export class ScopedTtlCache {
    * back onto the scope. This preserves write-through semantics even
    * when an invalidate races a concurrent read.
    *
-   * `inFlight` and `lastError` are intentionally preserved: the
-   * concurrent refresh is still allowed to complete (and the coalesced
-   * caller awaiting it will return normally), we just discard the data
-   * it would have written.
+   * `inFlight` is intentionally preserved: the concurrent refresh is
+   * still allowed to complete (and the coalesced caller awaiting it
+   * will return normally), we just discard the data it would have
+   * written.
    */
   invalidate(scope: CacheScope): void {
     const entry = this.scopes[scope];
