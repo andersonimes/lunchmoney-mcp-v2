@@ -2,6 +2,23 @@ import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { client } from "../client.js";
 
+// Mirrors `accountTypeEnum` in @lunch-money/lunch-money-js-v2. Used by both
+// the create and update manual-account schemas so an LLM caller is rejected
+// at the MCP boundary with a clear Zod error instead of a confusing 400 from
+// the Lunch Money API when an invalid `type` value is supplied.
+export const accountTypeEnumValues = [
+  "cash",
+  "credit",
+  "cryptocurrency",
+  "employee compensation",
+  "investment",
+  "loan",
+  "other liability",
+  "other asset",
+  "real estate",
+  "vehicle",
+] as const;
+
 export function registerManualAccountTools(server: McpServer) {
   server.tool(
     "get_all_manual_accounts",
@@ -28,7 +45,11 @@ export function registerManualAccountTools(server: McpServer) {
     "Create a new manually-tracked account",
     {
       name: z.string().describe("Account name"),
-      type: z.string().describe("Account type (e.g. 'checking', 'savings', 'credit', 'investment', 'property', 'vehicle', 'loan', 'other')"),
+      type: z
+        .enum(accountTypeEnumValues)
+        .describe(
+          "Account type. One of: 'cash', 'credit', 'cryptocurrency', 'employee compensation', 'investment', 'loan', 'other liability', 'other asset', 'real estate', 'vehicle'.",
+        ),
       balance: z.union([z.number(), z.string()]).describe("Current balance"),
       institution_name: z.string().nullable().optional().describe("Financial institution name"),
       display_name: z.string().nullable().optional().describe("Display name"),
@@ -52,7 +73,12 @@ export function registerManualAccountTools(server: McpServer) {
     {
       id: z.number().describe("Manual account ID to update"),
       name: z.string().optional().describe("Account name"),
-      type: z.string().optional().describe("Account type"),
+      type: z
+        .enum(accountTypeEnumValues)
+        .optional()
+        .describe(
+          "Account type. One of: 'cash', 'credit', 'cryptocurrency', 'employee compensation', 'investment', 'loan', 'other liability', 'other asset', 'real estate', 'vehicle'.",
+        ),
       balance: z.union([z.number(), z.string()]).optional().describe("Current balance"),
       institution_name: z.string().nullable().optional().describe("Financial institution name"),
       display_name: z.string().nullable().optional().describe("Display name"),
