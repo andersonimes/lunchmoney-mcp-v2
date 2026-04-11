@@ -233,7 +233,7 @@ export function registerTransactionTools(server: McpServer) {
       notes: z.string().optional().describe("Notes about the attachment"),
     },
     async ({ transaction_id, ...data }) => {
-      const attachment = await client.transactions.attachFile(transaction_id, data as any);
+      const attachment = await client.transactions.attachFile(transaction_id, data);
       return { content: [{ type: "text", text: JSON.stringify(attachment, null, 2) }] };
     },
   );
