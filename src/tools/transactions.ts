@@ -1,8 +1,13 @@
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { client } from "../client.js";
+import {
+  toCreateTransactionsInput,
+  toUpdateTransactionInput,
+  toUpdateTransactionsInput,
+} from "./adapters/transactions.js";
 
-const insertTransactionSchema = z.object({
+export const insertTransactionSchema = z.object({
   date: z.string().describe("Transaction date (YYYY-MM-DD)"),
   payee: z.string().describe("Payee name"),
   amount: z.union([z.number(), z.string()]).describe("Transaction amount"),
@@ -21,7 +26,7 @@ const insertTransactionSchema = z.object({
   recurring_id: z.number().nullable().optional().describe("Recurring item ID"),
 });
 
-const updateTransactionSchema = z.object({
+export const updateTransactionSchema = z.object({
   date: z.string().optional().describe("Transaction date (YYYY-MM-DD)"),
   payee: z.string().optional().describe("Payee name"),
   amount: z.union([z.number(), z.string()]).optional().describe("Transaction amount"),
@@ -35,7 +40,7 @@ const updateTransactionSchema = z.object({
   recurring_id: z.number().nullable().optional().describe("Recurring item ID"),
 });
 
-const splitTransactionSchema = z.object({
+export const splitTransactionSchema = z.object({
   amount: z.union([z.number(), z.string()]).describe("Split amount"),
   date: z.string().optional().describe("Split date (YYYY-MM-DD)"),
   payee: z.string().optional().describe("Payee name"),
@@ -46,6 +51,26 @@ const splitTransactionSchema = z.object({
   notes: z.string().optional().describe("Notes"),
   tag_ids: z.array(z.number()).optional().describe("Array of tag IDs"),
 });
+
+// Shared shape for the create_transactions tool. Exported as a ZodRawShape
+// so server.tool() can consume it directly, and wrapped in z.object() as
+// createTransactionsSchema so adapter functions can type their input with
+// z.infer<typeof createTransactionsSchema>.
+export const createTransactionsShape = {
+  transactions: z.array(insertTransactionSchema).describe("Array of transactions to create"),
+  apply_rules: z.boolean().optional().describe("Apply category rules to new transactions"),
+  skip_duplicates: z.boolean().optional().describe("Skip duplicate transactions"),
+  skip_balance_update: z.boolean().optional().describe("Skip balance update after insert"),
+};
+export const createTransactionsSchema = z.object(createTransactionsShape);
+
+// Shared shape for the update_transactions (bulk) tool.
+export const updateTransactionsShape = {
+  transactions: z
+    .array(updateTransactionSchema.extend({ id: z.number().describe("Transaction ID") }))
+    .describe("Array of transactions to update, each must include an id"),
+};
+export const updateTransactionsSchema = z.object(updateTransactionsShape);
 
 export function registerTransactionTools(server: McpServer) {
   server.tool(
@@ -94,14 +119,9 @@ export function registerTransactionTools(server: McpServer) {
   server.tool(
     "create_transactions",
     "Create one or more transactions",
-    {
-      transactions: z.array(insertTransactionSchema).describe("Array of transactions to create"),
-      apply_rules: z.boolean().optional().describe("Apply category rules to new transactions"),
-      skip_duplicates: z.boolean().optional().describe("Skip duplicate transactions"),
-      skip_balance_update: z.boolean().optional().describe("Skip balance update after insert"),
-    },
+    createTransactionsShape,
     async (params) => {
-      const result = await client.transactions.create(params as any);
+      const result = await client.transactions.create(toCreateTransactionsInput(params));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     },
   );
@@ -114,7 +134,7 @@ export function registerTransactionTools(server: McpServer) {
       ...updateTransactionSchema.shape,
     },
     async ({ id, ...data }) => {
-      const transaction = await client.transactions.update(id, data as any);
+      const transaction = await client.transactions.update(id, toUpdateTransactionInput(data));
       return { content: [{ type: "text", text: JSON.stringify(transaction, null, 2) }] };
     },
   );
@@ -144,13 +164,9 @@ export function registerTransactionTools(server: McpServer) {
   server.tool(
     "update_transactions",
     "Bulk update multiple transactions",
-    {
-      transactions: z
-        .array(updateTransactionSchema.extend({ id: z.number().describe("Transaction ID") }))
-        .describe("Array of transactions to update, each must include an id"),
-    },
+    updateTransactionsShape,
     async (params) => {
-      const result = await client.transactions.updateMany(params as any);
+      const result = await client.transactions.updateMany(toUpdateTransactionsInput(params));
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     },
   );
