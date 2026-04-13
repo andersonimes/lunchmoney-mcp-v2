@@ -42,11 +42,11 @@ describe("manual account tools", () => {
 
     await tools.get("create_manual_account")!.handler({
       name: "New Account",
-      type: "checking",
+      type: "credit",
       balance: 1000,
     });
     expect(mockClient.manualAccounts.create).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "New Account", type: "checking", balance: 1000 }),
+      expect.objectContaining({ name: "New Account", type: "credit", balance: 1000 }),
     );
   });
 
@@ -76,7 +76,7 @@ describe("manual account tools", () => {
 
       await tools.get("create_manual_account")!.handler({
         name: "New Account",
-        type: "checking",
+        type: "credit",
         balance: 1000,
       });
 
