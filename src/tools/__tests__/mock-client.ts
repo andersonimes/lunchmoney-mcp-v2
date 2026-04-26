@@ -53,6 +53,11 @@ export const mockClient = {
   summary: {
     get: vi.fn(),
   },
+  budgets: {
+    getSettings: vi.fn(),
+    upsert: vi.fn(),
+    delete: vi.fn(),
+  },
 };
 
 vi.mock("../../client.js", () => ({

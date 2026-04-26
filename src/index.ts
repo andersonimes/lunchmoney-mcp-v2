@@ -10,6 +10,7 @@ import { registerPlaidAccountTools } from "./tools/plaid-accounts.js";
 import { registerTagTools } from "./tools/tags.js";
 import { registerRecurringItemTools } from "./tools/recurring-items.js";
 import { registerSummaryTools } from "./tools/summary.js";
+import { registerBudgetTools } from "./tools/budgets.js";
 
 const server = new McpServer({
   name: "lunchmoney-mcp-v2",
@@ -24,6 +25,7 @@ registerPlaidAccountTools(server);
 registerTagTools(server);
 registerRecurringItemTools(server);
 registerSummaryTools(server);
+registerBudgetTools(server);
 
 async function main() {
   const transport = new StdioServerTransport();
